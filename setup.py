@@ -1,6 +1,6 @@
 from setuptools import setup
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __url__ = "https://github.com/carlskeide/slack-cache"
 
 setup(
@@ -13,7 +13,7 @@ setup(
     keywords=[
         "slack"
     ],
-    packages=[
+    py_modules=[
         "slack_cache"
     ],
     include_package_data=False,

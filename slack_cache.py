@@ -31,7 +31,9 @@ class CachedAPI(object):
 
         response = self.client.api_call(*args, **kwargs)
         if response["ok"] is not True:
-            logger.error(u"Error during slack call. response: {}".format(response))
+            logger.error(
+                u"Error during slack call. response: {}".format(response))
+
             raise Exception("Slack API return an error.")
 
         return response
@@ -59,7 +61,7 @@ class CachedAPI(object):
     def user(self, user_id):
         logger.debug(u"Fetching user: {}".format(user_id))
 
-        users_keyy = self.cache_key('USERS')
+        users_key = self.cache_key('USERS')
 
         cached_user = self.db.hget(users_key, user_id)
         if cached_user:
