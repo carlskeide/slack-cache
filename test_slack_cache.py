@@ -102,7 +102,20 @@ class TestCachedSlack(TestCase):
             self.cache._call_slack("some_method")
 
     def test__get_profile(self):
-        pass
+        cache_key = "SLACKCACHE:PROFILE:some_user"
+        self.mock_redis.hgetall.return_value = {"foo": "bar"}
+
+        assert self.cache._get_profile("some_user") == {"foo": "bar"}
+        self.mock_redis.hgetall.assert_called_with(cache_key)
+        self.mock_slack.api_call.assert_not_called()
+
+        self.mock_redis.hgetall.return_value = {}
+        self.mock_slack.api_call.return_value = SLACK_PROFILE
+        assert self.cache._get_profile("some_user") == SLACK_PROFILE["profile"]
+        self.mock_slack.api_call.assert_called_with(
+            "users.profile.get", json={"user": "some_user"})
+        self.mock_redis.hmset.assert_called_with(cache_key, SLACK_PROFILE["profile"])
+        self.mock_redis.expire.assert_called_with(cache_key, 3600)
 
     def test_avatar(self):
         mock_profile = SLACK_PROFILE["profile"]
@@ -124,4 +137,17 @@ class TestCachedSlack(TestCase):
         self.cache._get_profile.assert_called_with("some_user")
 
     def test_channel_members(self):
-        pass
+        cache_key = "SLACKCACHE:CHANNEL:some_channel"
+        self.mock_redis.smembers.return_value = ["foo", "bar"]
+
+        assert self.cache.channel_members("some_channel") == ["foo", "bar"]
+        self.mock_redis.smembers.assert_called_with(cache_key)
+        self.mock_slack.api_call.assert_not_called()
+
+        self.mock_redis.smembers.return_value = []
+        self.mock_slack.api_call.return_value = SLACK_CONVERSATION_MEMBERS
+        assert self.cache.channel_members("some_channel") == SLACK_CONVERSATION_MEMBERS["members"]
+        self.mock_slack.api_call.assert_called_with(
+            "conversations.members", json={"channel": "some_channel"})
+        self.mock_redis.sadd.assert_called_with(cache_key, *SLACK_CONVERSATION_MEMBERS["members"])
+        self.mock_redis.expire.assert_called_with(cache_key, 3600)
