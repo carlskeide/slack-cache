@@ -58,6 +58,11 @@ class TestCachedSlack(TestCase):
             redis=self.mock_redis
         )
 
+    # TODO: migrate from TestCase
+    @pytest.fixture(autouse=True)
+    def inject_fixtures(self, caplog):
+        self._caplog = caplog
+
     def test__cache_key(self):
         assert self.cache._cache_key("foo") == "SLACKCACHE:foo"
         assert self.cache._cache_key("foo", "bar") == "SLACKCACHE:foo:bar"
@@ -67,9 +72,9 @@ class TestCachedSlack(TestCase):
             redis=self.mock_redis,
             prefix="foobar"
         )
-        assert self.cache._cache_key("foo", "bar") == "foobar:foo:bar"
+        assert cache._cache_key("foo", "bar") == "foobar:foo:bar"
 
-    def test__call_slack(self, caplog):
+    def test__call_slack(self):
         ok = {
             "ok": True,
             "data": "foobar"
@@ -88,11 +93,11 @@ class TestCachedSlack(TestCase):
         self.mock_slack.api_call.assert_called_with("some_method", json={"foo": "bar"})
 
         self.mock_slack.api_call.return_value = warning
-        with caplog.at_level(logging.WARNING):
+        with self._caplog.at_level(logging.WARNING):
             assert self.cache._call_slack("some_method") == warning
-        assert 'raised a warning' in caplog.text
+        assert 'raised a warning' in self._caplog.text
 
-        self.mock_slack.api_call.side_effect = SlackApiError("foo")
+        self.mock_slack.api_call.side_effect = SlackApiError("foo", response={"ok": False, "error": "foo"})
         with pytest.raises(SlackApiError):
             self.cache._call_slack("some_method")
 
@@ -101,28 +106,22 @@ class TestCachedSlack(TestCase):
 
     def test_avatar(self):
         mock_profile = SLACK_PROFILE["profile"]
-        self.cache._get_profile = Mock(
-            spec=CachedSlack._get_profile,
-            return_value=mock_profile
-        )
+        self.cache._get_profile = Mock(return_value=mock_profile)
 
         assert self.cache.avatar("some_user") == mock_profile["image_192"]
-        assert self.cache.avatar("some_user", 32) == mock_profile["image_32"]
         self.cache._get_profile.assert_called_with("some_user")
+        assert self.cache.avatar("some_user", 32) == mock_profile["image_32"]
 
         with pytest.raises(KeyError):
             self.cache.avatar("some_user", 8)
 
     def test_user_name(self):
         mock_profile = SLACK_PROFILE["profile"]
-        self.cache._get_profile = Mock(
-            spec=CachedSlack._get_profile,
-            return_value=mock_profile
-        )
+        self.cache._get_profile = Mock(return_value=mock_profile)
 
         assert self.cache.user_name("some_user") == mock_profile["display_name"]
         assert self.cache.user_name("some_user", real_name=True) == mock_profile["real_name"]
-        self.mock_slack._get_profile.assert_called_with("some_user")
+        self.cache._get_profile.assert_called_with("some_user")
 
     def test_channel_members(self):
         pass
