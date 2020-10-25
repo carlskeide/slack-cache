@@ -21,16 +21,17 @@ class CachedSlack(object):
         "presence": 60 * 20,
     }
 
-    def __init__(self,
-        db: Redis,
-        client: SlackClient,
-        prefix: str = "SLACKCACHE"
-    ):
+    def __init__(
+            self,
+            db: Redis,
+            client: SlackClient,
+            prefix: str = "SLACKCACHE"):
+
         self.db = db
         self.client = client
         self.prefix = prefix
 
-    def cache_key(self, *atoms: str) -> str:
+    def _cache_key(self, *atoms: str) -> str:
         return ":".join([self.prefix] + atoms)
 
     def _slack(self, method: str, **kwargs) -> dict:
@@ -50,9 +51,11 @@ class CachedSlack(object):
             return response
 
     def is_present(self, user_id: str) -> bool:
-        logger.debug("Checking presence for: {}".format(user_id))
+        """ Check whether a given USERID is marked as present """
 
-        presence_key = self.cache_key('PRESENCE')
+        logger.debug("Checking presence for: %s", user_id)
+
+        presence_key = self._cache_key('PRESENCE')
 
         cached_presence = self.db.hget(presence_key, user_id)
         if cached_presence:
@@ -69,10 +72,12 @@ class CachedSlack(object):
 
         return (user_presence.get(user_id) == "active")
 
-    def user(self, user_id: str) -> Union[dict, None]:
-        logger.debug("Fetching user: {}".format(user_id))
+    def user_name(self, user_id: str) -> str:
+        """ Get the current username for USERID """
 
-        users_key = self.cache_key('USERS')
+        logger.debug("Fetching user: %s", user_id)
+
+        users_key = self._cache_key('USERS')
 
         cached_user = self.db.hget(users_key, user_id)
         if cached_user:
@@ -100,15 +105,16 @@ class CachedSlack(object):
             if user_id not in ignored_users else None)
 
     def profile(self, user_id: str) -> dict:
-        logger.debug("Fetching profile: {}".format(user_id))
+        """ Fetch a slack user profile """
+        logger.debug("Fetching profile: %s", user_id)
 
-        profile_key = self.cache_key('PROFILE', str(user_id))
+        profile_key = self._cache_key('PROFILE', str(user_id))
 
         cached_profile = self.db.hgetall(profile_key)
         if cached_profile:
             return cached_profile
 
-        logger.info("Refreshing profile: {}".format(user_id))
+        logger.info("Refreshing profile: %s", user_id)
         response = self._slack("users.info", user=user_id)
 
         profile = response["user"]["profile"]
@@ -118,10 +124,19 @@ class CachedSlack(object):
 
         return profile
 
+    def avatar(self, user_id: str, size: int = 192) -> str:
+        logger.debug(u"Fetching avatar for user: %s", user_id)
+
+        profile = self.profile(user_id)
+        image_key = "image_{}".format(size)
+
+        return profile[image_key]
+
     def channel_members(self, channel_id: str) -> list:
+        """ Fetch all memebers of a channel """
         logger.debug("Fetching channel: {}".format(channel_id))
 
-        channel_key = self.cache_key('CHANNEL', str(channel_id))
+        channel_key = self._cache_key('CHANNEL', str(channel_id))
 
         cached_channel = self.db.smembers(channel_key)
         if cached_channel:
