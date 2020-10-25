@@ -1,7 +1,7 @@
 # coding=utf-8
 import logging
 
-from slackclient import SlackClient
+from slack import WebClient
 from redis.client import Redis
 
 logger = logging.getLogger(__name__)
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["CachedSlack", "SlackError"]
 
 
-class SlackError(Exception):
+class CachedSlackError(Exception):
     pass
 
 
@@ -22,7 +22,7 @@ class CachedSlack(object):
     def __init__(
             self,
             db: Redis,
-            client: SlackClient,
+            client: WebClient,
             prefix: str = "SLACKCACHE"):
 
         self.db = db
@@ -39,7 +39,7 @@ class CachedSlack(object):
         if response["ok"] is not True:
             logger.error("Error during slack call. response: %s", response)
 
-            raise SlackError("error: {}".format(response.get("error")))
+            raise CachedSlackError("error: {}".format(response.get("error")))
 
         else:
             if "warning" in response:
@@ -69,7 +69,7 @@ class CachedSlack(object):
 
     def avatar(self, user_id: str, size: int = 192) -> str:
         """ Fetch a user's avatar URL """
-        logger.debug(u"Fetching avatar for user: %s", user_id)
+        logger.debug("Fetching avatar for user: %s", user_id)
 
         profile = self._get_profile(user_id)
         image_key = "image_{}".format(size)
@@ -77,7 +77,7 @@ class CachedSlack(object):
 
     def user_name(self, user_id: str, real_name: bool = False) -> str:
         """ Fetch a user's name """
-        logger.debug(u"Fetching name for user: %s", user_id)
+        logger.debug("Fetching name for user: %s", user_id)
 
         profile = self._get_profile(user_id)
         return profile["real_name" if real_name else "display_name"]
