@@ -1,6 +1,6 @@
 from setuptools import setup
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 __url__ = "https://github.com/carlskeide/slack-cache"
 
 setup(
@@ -21,6 +21,7 @@ setup(
     url=__url__,
     download_url="{}/archive/{}.tar.gz".format(__url__, __version__),
     install_requires=[
-        "slackclient"
+        "slackclient >= 2.0",
+        "redis >= 3.5"
     ]
 )
