@@ -26,7 +26,7 @@ class CachedSlack(object):
         self.prefix = prefix
 
     def _cache_key(self, *atoms: str) -> str:
-        return ":".join([self.prefix] + atoms)
+        return ":".join([self.prefix] + list(atoms))
 
     def _call_slack(self, method: str, **kwargs) -> dict:
         logger.debug("Calling Slack method: %s, kwargs: %s", method, kwargs)

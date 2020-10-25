@@ -1,5 +1,6 @@
 # coding=utf-8
 import logging
+from unittest import TestCase
 from unittest.mock import Mock
 
 import pytest
@@ -47,7 +48,7 @@ SLACK_CONVERSATION_MEMBERS ={
 }
 
 
-class TestCachedSlack(object):
+class TestCachedSlack(TestCase):
     def setUp(self):
         self.mock_slack = Mock(WebClient)
         self.mock_redis = Mock(Redis)
@@ -100,21 +101,21 @@ class TestCachedSlack(object):
 
     def test_avatar(self):
         mock_profile = SLACK_PROFILE["profile"]
-        self.mock_slack._get_profile = Mock(
+        self.cache._get_profile = Mock(
             spec=CachedSlack._get_profile,
             return_value=mock_profile
         )
 
         assert self.cache.avatar("some_user") == mock_profile["image_192"]
         assert self.cache.avatar("some_user", 32) == mock_profile["image_32"]
-        self.mock_slack._get_profile.assert_called_with("some_user")
+        self.cache._get_profile.assert_called_with("some_user")
 
         with pytest.raises(KeyError):
             self.cache.avatar("some_user", 8)
 
     def test_user_name(self):
         mock_profile = SLACK_PROFILE["profile"]
-        self.mock_slack._get_profile = Mock(
+        self.cache._get_profile = Mock(
             spec=CachedSlack._get_profile,
             return_value=mock_profile
         )
