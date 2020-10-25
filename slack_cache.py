@@ -21,20 +21,20 @@ class CachedSlack(object):
 
     def __init__(
             self,
-            db: Redis,
-            client: WebClient,
+            redis: Redis,
+            slack: WebClient,
             prefix: str = "SLACKCACHE"):
 
-        self.db = db
-        self.client = client
+        self.redis = redis
+        self.slack = slack
         self.prefix = prefix
 
     def _cache_key(self, *atoms: str) -> str:
         return ":".join([self.prefix] + atoms)
 
-    def _slack(self, method: str, **kwargs) -> dict:
+    def _call_slack(self, method: str, **kwargs) -> dict:
         logger.debug("Calling Slack method: %s, kwargs: %s", method, kwargs)
-        response = self.client.api_call(method, **kwargs)
+        response = self.slack.api_call(method, **kwargs)
 
         if response["ok"] is not True:
             logger.error("Error during slack call. response: %s", response)
@@ -54,16 +54,17 @@ class CachedSlack(object):
 
         profile_key = self._cache_key('PROFILE', str(user_id))
 
-        cached_profile = self.db.hgetall(profile_key)
+        cached_profile = self.redis.hgetall(profile_key)
         if cached_profile:
             return cached_profile
 
         logger.info("Refreshing profile: %s", user_id)
-        response = self._slack("users.info", user=user_id)
-        profile = response["user"]["profile"]
+        response = self._call_slack(
+            "users.info", json={"user": user_id})
 
-        self.db.hmset(profile_key, profile)
-        self.db.expire(profile_key, self.ttl["profile"])
+        profile = response["user"]["profile"]
+        self.redis.hmset(profile_key, profile)
+        self.redis.expire(profile_key, self.ttl["profile"])
 
         return profile
 
@@ -88,15 +89,16 @@ class CachedSlack(object):
 
         channel_key = self._cache_key('CHANNEL', str(channel_id))
 
-        cached_channel = self.db.smembers(channel_key)
+        cached_channel = self.redis.smembers(channel_key)
         if cached_channel:
             return cached_channel
 
         logger.info("Refreshing channel: {}".format(channel_id))
-        response = self._slack("channels.info", channel=channel_id)
+        response = self._call_slack(
+            "channels.info", json={"channel": channel_id})
 
         channel_members = response["channel"]["members"]
-        self.db.sadd(channel_key, *channel_members)
-        self.db.expire(channel_key, self.ttl["channel"])
+        self.redis.sadd(channel_key, *channel_members)
+        self.redis.expire(channel_key, self.ttl["channel"])
 
         return channel_members
