@@ -1,45 +1,56 @@
 # coding=utf-8
 import logging
 
-import slackclient
+from slackclient import SlackClient
+from redis.client import Redis
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["CachedAPI"]
+__all__ = ["CachedSlack", "SlackError"]
 
 
-class CachedAPI(object):
-    def __init__(self, db, token, prefix="SLACK"):
+class SlackError(Exception):
+    pass
+
+
+class CachedSlack(object):
+    ttl = {
+        "users": 60 * 60 * 24 * 5,
+        "profile": 60 * 60 * 24 * 5,
+        "channel": 60 * 60 * 16,
+        "presence": 60 * 20,
+    }
+
+    def __init__(self,
+        db: Redis,
+        client: SlackClient,
+        prefix: str = "SLACKCACHE"
+    ):
         self.db = db
-
-        self.ttl = {
-            "users": 60 * 60 * 24 * 5,
-            "profile": 60 * 60 * 24 * 5,
-            "channel": 60 * 60 * 16,
-            "presence": 60 * 20,
-        }
-
+        self.client = client
         self.prefix = prefix
-        self.client = slackclient.SlackClient(token)
 
-    def cache_key(self, *atoms):
+    def cache_key(self, *atoms: str) -> str:
         return ":".join([self.prefix] + atoms)
 
-    def slack(self, *args, **kwargs):
-        logger.debug(u"Slack API call, args: {}, kwargs: {}".format(
-                  args, kwargs))
+    def _slack(self, method: str, **kwargs) -> dict:
+        logger.debug("Calling Slack method: %s, kwargs: %s", method, kwargs)
+        response = self.client.api_call(method, **kwargs)
 
-        response = self.client.api_call(*args, **kwargs)
         if response["ok"] is not True:
-            logger.error(
-                u"Error during slack call. response: {}".format(response))
+            logger.error("Error during slack call. response: %s", response)
 
-            raise Exception("Slack API return an error.")
+            raise SlackError("error: {}".format(response.get("error")))
 
-        return response
+        else:
+            if "warning" in response:
+                logger.warning("Slack method: %s raised a warning: %s",
+                               method, response["warning"])
 
-    def is_present(self, user_id):
-        logger.debug(u"Checking presence for: {}".format(user_id))
+            return response
+
+    def is_present(self, user_id: str) -> bool:
+        logger.debug("Checking presence for: {}".format(user_id))
 
         presence_key = self.cache_key('PRESENCE')
 
@@ -47,8 +58,8 @@ class CachedAPI(object):
         if cached_presence:
             return (cached_presence == "active")
 
-        logger.debug(u"Refreshing presence")
-        response = self.slack("users.list", presence=True)
+        logger.debug("Refreshing presence")
+        response = self._slack("users.list", presence=True)
 
         user_presence = {u["id"]: u.get("presence", "away")
                          for u in response["members"]}
@@ -58,8 +69,8 @@ class CachedAPI(object):
 
         return (user_presence.get(user_id) == "active")
 
-    def user(self, user_id):
-        logger.debug(u"Fetching user: {}".format(user_id))
+    def user(self, user_id: str) -> Union[dict, None]:
+        logger.debug("Fetching user: {}".format(user_id))
 
         users_key = self.cache_key('USERS')
 
@@ -68,8 +79,8 @@ class CachedAPI(object):
             return (cached_user
                 if not self.db.sismember(self.ignored_key, user_id) else None)
 
-        logger.info(u"Refreshing userlist")
-        response = self.slack("users.list")
+        logger.info("Refreshing userlist")
+        response = self._slack("users.list")
 
         all_users = {u["id"]: u["name"]
                      for u in response["members"]}
@@ -88,8 +99,8 @@ class CachedAPI(object):
         return (all_users.get(user_id)
             if user_id not in ignored_users else None)
 
-    def profile(self, user_id):
-        logger.debug(u"Fetching profile: {}".format(user_id))
+    def profile(self, user_id: str) -> dict:
+        logger.debug("Fetching profile: {}".format(user_id))
 
         profile_key = self.cache_key('PROFILE', str(user_id))
 
@@ -97,8 +108,8 @@ class CachedAPI(object):
         if cached_profile:
             return cached_profile
 
-        logger.info(u"Refreshing profile: {}".format(user_id))
-        response = self.slack("users.info", user=user_id)
+        logger.info("Refreshing profile: {}".format(user_id))
+        response = self._slack("users.info", user=user_id)
 
         profile = response["user"]["profile"]
         profile.update({})
@@ -107,8 +118,8 @@ class CachedAPI(object):
 
         return profile
 
-    def channel_members(self, channel_id):
-        logger.debug(u"Fetching channel: {}".format(channel_id))
+    def channel_members(self, channel_id: str) -> list:
+        logger.debug("Fetching channel: {}".format(channel_id))
 
         channel_key = self.cache_key('CHANNEL', str(channel_id))
 
@@ -116,8 +127,8 @@ class CachedAPI(object):
         if cached_channel:
             return cached_channel
 
-        logger.info(u"Refreshing channel: {}".format(channel_id))
-        response = self.slack("channels.info", channel=channel_id)
+        logger.info("Refreshing channel: {}".format(channel_id))
+        response = self._slack("channels.info", channel=channel_id)
 
         channel_members = response["channel"]["members"]
         self.db.sadd(channel_key, *channel_members)
