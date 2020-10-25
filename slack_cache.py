@@ -6,7 +6,7 @@ from redis.client import Redis
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["CachedSlack", "SlackError"]
+__all__ = ["CachedSlack", "CachedSlackError"]
 
 
 class CachedSlackError(Exception):
