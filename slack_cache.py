@@ -6,11 +6,7 @@ from redis.client import Redis
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["CachedSlack", "CachedSlackError"]
-
-
-class CachedSlackError(Exception):
-    pass
+__all__ = ["CachedSlack", ]
 
 
 class CachedSlack(object):
@@ -36,17 +32,11 @@ class CachedSlack(object):
         logger.debug("Calling Slack method: %s, kwargs: %s", method, kwargs)
         response = self.slack.api_call(method, **kwargs)
 
-        if response["ok"] is not True:
-            logger.error("Error during slack call. response: %s", response)
+        if "warning" in response:
+            logger.warning("Slack method: %s raised a warning: %s",
+                           method, response["warning"])
 
-            raise CachedSlackError("error: {}".format(response.get("error")))
-
-        else:
-            if "warning" in response:
-                logger.warning("Slack method: %s raised a warning: %s",
-                               method, response["warning"])
-
-            return response
+        return response
 
     def _get_profile(self, user_id: str) -> dict:
         """ Fetch a user profile """
@@ -60,9 +50,10 @@ class CachedSlack(object):
 
         logger.info("Refreshing profile: %s", user_id)
         response = self._call_slack(
-            "users.info", json={"user": user_id})
+            "users.profile.get",
+            json={"user": user_id})
 
-        profile = response["user"]["profile"]
+        profile = response["profile"]
         self.redis.hmset(profile_key, profile)
         self.redis.expire(profile_key, self.ttl["profile"])
 
@@ -95,9 +86,10 @@ class CachedSlack(object):
 
         logger.info("Refreshing channel: {}".format(channel_id))
         response = self._call_slack(
-            "channels.info", json={"channel": channel_id})
+            "conversations.members",
+            json={"channel": channel_id})
 
-        channel_members = response["channel"]["members"]
+        channel_members = response["members"]
         self.redis.sadd(channel_key, *channel_members)
         self.redis.expire(channel_key, self.ttl["channel"])
 

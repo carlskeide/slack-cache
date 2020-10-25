@@ -4,9 +4,48 @@ from unittest.mock import Mock
 
 import pytest
 from slack import WebClient
+from slack.errors import SlackApiError
 from redis.client import Redis
 
-from slack_cache import CachedSlack, CachedSlackError
+from slack_cache import CachedSlack
+
+# https://api.slack.com/methods/users.profile.get
+SLACK_PROFILE =  {
+    "ok": True,
+    "profile": {
+        "avatar_hash": "ge3b51ca72de",
+        "status_text": "Print is dead",
+        "status_emoji": ":books:",
+        "status_expiration": 0,
+        "real_name": "Egon Spengler",
+        "display_name": "spengler",
+        "real_name_normalized": "Egon Spengler",
+        "display_name_normalized": "spengler",
+        "email": "spengler@ghostbusters.example.com",
+        "image_original": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_24": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_32": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_48": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_72": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_192": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "image_512": "https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg",
+        "team": "T012AB3C4"
+    }
+}
+
+# https://api.slack.com/methods/conversations.members
+SLACK_CONVERSATION_MEMBERS ={
+    "ok": True,
+    "members": [
+        "U023BECGF",
+        "U061F7AUR",
+        "W012A3CDE"
+    ],
+    "response_metadata": {
+        "next_cursor": "e3VzZXJfaWQ6IFcxMjM0NTY3fQ=="
+    }
+}
+
 
 class TestCachedSlack(object):
     def setUp(self):
@@ -15,7 +54,7 @@ class TestCachedSlack(object):
 
         self.cache = CachedSlack(
             slack=self.mock_slack,
-            redis=mock_redis
+            redis=self.mock_redis
         )
 
     def test__cache_key(self):
@@ -24,7 +63,7 @@ class TestCachedSlack(object):
 
         cache = CachedSlack(
             slack=self.mock_slack,
-            redis=mock_redis,
+            redis=self.mock_redis,
             prefix="foobar"
         )
         assert self.cache._cache_key("foo", "bar") == "foobar:foo:bar"
@@ -41,11 +80,6 @@ class TestCachedSlack(object):
             "data": "foobar"
         }
 
-        error = {
-            "ok": False,
-            "error": "some_error"
-        }
-
         self.mock_slack.api_call.return_value = ok
         assert self.cache._call_slack("some_method") == ok
         self.mock_slack.api_call.assert_called_with("some_method")
@@ -57,23 +91,37 @@ class TestCachedSlack(object):
             assert self.cache._call_slack("some_method") == warning
         assert 'raised a warning' in caplog.text
 
-        self.mock_slack.api_call.return_value = error
-        with pytest.raises(CachedSlackError) as exc:
-            self.cache._call_slack("some_method")
-        assert "some_error" in str(exc.value)
-
-        self.mock_slack.api_call.side_effect = KeyError("API")
-        with pytest.raises(KeyError):
+        self.mock_slack.api_call.side_effect = SlackApiError("foo")
+        with pytest.raises(SlackApiError):
             self.cache._call_slack("some_method")
 
     def test__get_profile(self):
         pass
 
     def test_avatar(self):
-        pass
+        mock_profile = SLACK_PROFILE["profile"]
+        self.mock_slack._get_profile = Mock(
+            spec=CachedSlack._get_profile,
+            return_value=mock_profile
+        )
+
+        assert self.cache.avatar("some_user") == mock_profile["image_192"]
+        assert self.cache.avatar("some_user", 32) == mock_profile["image_32"]
+        self.mock_slack._get_profile.assert_called_with("some_user")
+
+        with pytest.raises(KeyError):
+            self.cache.avatar("some_user", 8)
 
     def test_user_name(self):
-        pass
+        mock_profile = SLACK_PROFILE["profile"]
+        self.mock_slack._get_profile = Mock(
+            spec=CachedSlack._get_profile,
+            return_value=mock_profile
+        )
+
+        assert self.cache.user_name("some_user") == mock_profile["display_name"]
+        assert self.cache.user_name("some_user", real_name=True) == mock_profile["real_name"]
+        self.mock_slack._get_profile.assert_called_with("some_user")
 
     def test_channel_members(self):
         pass
